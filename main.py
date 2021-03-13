@@ -1,7 +1,8 @@
 import requests
-import json
 import time
 import sqlite3
+from datetime import datetime
+from pytz import timezone
 
 
 conn = sqlite3.connect('air_quality.db')
@@ -12,14 +13,16 @@ def create_database():
     """Create database if doesn't exist."""
     c.execute("""CREATE TABLE IF NOT EXISTS air_quality (
                 city text,
-                pm25 real
+                pm25 real,
+                pm10 real,
+                time text
                 )""")
 
 
-def store_in_database(city, pm25):
+def store_in_database(city, pm25, pm10, now_time):
     """Store values in database."""
     with conn:
-        c.execute("INSERT INTO air_quality VALUES (:city, :pm25)", {'city': city, 'pm25': pm25})
+        c.execute("INSERT INTO air_quality VALUES (:city, :pm25, :pm10, :now_time)", {'city': city, 'pm25': pm25, 'pm10': pm10, 'now_time': now_time})
 
 
 def get_measurements(installation_id):
@@ -28,11 +31,6 @@ def get_measurements(installation_id):
     url = f'https://airapi.airly.eu/v2/measurements/installation?installationId={installation_id}'
     response = requests.get(url, headers=headers)
     r_dict = response.json()
-    filename = 'data_airly.json'
-
-    with open(filename, 'w') as f:
-        json.dump(r_dict, f)
-    # percentage_of_pollution = r_dict['current']['standards'][0]['percent']
     return r_dict
 
 
@@ -60,21 +58,30 @@ def get_city(installation_id):
     return city
 
 
+def get_current_time():
+    current_time = datetime.now(timezone('Europe/Warsaw'))
+    return current_time.strftime("%H:%M:%S %d-%m-%y")
+
+
 def run_forever():
     print('\nCtrl+c to exit.\n')
-    interval_in_sec = 10
-    installations = [7523, 9902, 6891, 10010]
+    interval_in_sec = 1800
+    installations = [9928, 37995, 13310]
     while True:
         create_database()
-        for installation in installations:
-            city = get_city(installation)
-            pm25 = get_pm25(installation)
-            try:
-                store_in_database(city, pm25)
-                time.sleep(interval_in_sec)
-            except KeyboardInterrupt:
-                print('\nInterrupted.')
-                exit(0)
+        try:
+            for installation in installations:
+                city = get_city(installation)
+                pm25 = get_pm25(installation)
+                pm10 = get_pm10(installation)
+                now_time = get_current_time()
+
+                store_in_database(city, pm25, pm10, now_time)
+        except KeyboardInterrupt:
+            print('\nInterrupted.')
+            exit(0)
+
+        time.sleep(interval_in_sec)
 
 
 if __name__ == "__main__":
